@@ -1,0 +1,259 @@
+P3DFFT - Highly scalable parallel 3D Fast Fourier Transforms library
+
+Version 2.2
+
+Copyright (C) 2006-2008 Dmitry Pekurovsky
+
+San Diego Supercomputer Center/UC SanDiego
+
+
+------------
+Notice
+------------
+
+    P3DFFT is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+------------
+Acknowledgements
+------------
+
+Prof. P.K.Yeung, Georgia Institute of Technology
+Dr. Diego Donzis
+Dr. Giri Chukkapalli, Sun Microsystems
+
+------------
+Features
+------------
+
+    * Parallel implementation of 3D FFT with 2D (a.k.a. pencils) data 
+decomposition, overcoming an important limitation to scalability of other 
+3D FFT libraries implementing 1D, or slab, decomposition.
+    * Optimized for parallel communication and single-CPU performance.
+    * Built on top of well-optimized and flexible 1D FFT libraries and 
+      expandable to other libraries.
+
+The 1D decomposition suffers from the limitation that the number
+of processors used cannot be greater than the maximum linear grid size of the 
+cubic domain to be processed. With the 2D domain decomposition scheme 
+the maximum number of processors is significantly higher, equal to the 
+square of the linear grid size. 
+
+------------
+Machine requirements
+------------
+
+This library is built on top of an externally provided 1D FFT library. 
+Current choices are ESSL (for IBM systems) or FFTW. Either one of these 
+libraries must be installed on the system in order to use P3DFFT.
+The choice of the library is specified at compile time. 
+It is also possible to modify the source code to include options 
+for other 1D FFT libraries; the guidelines for doing that are below. 
+
+P3DFFT is written in Fortran 90 with MPI. Having an Fortran90/MPI compiler
+is essential to building the library on your system. 
+
+------------
+Building the P3DFFT library
+------------
+
+In the /build directory, several default makefiles are provided. 
+For systems not represented by these makefiles, modify either one of 
+the makefile with the appropriate definitions of Fortran compilers, 
+archivers, linkers, compilation flags and location of 1D FFT library. 
+Also be sure to specify either -DESSL or -DFFTW preprocessor flag for 
+underlying 1D FFT library. 
+The library can be built with either single or double precision
+(-DSINGLE_PREC or -DDOUBLE_PREC preprocessor flags; default is single).
+Copy the appropriate make file into 'makefile'. 
+
+Entering 'make' on the command line will build the library and install it 
+in the location specified as P3DFFT_ROOT in the makefile. 
+Entering 'make lib' only makes the library but does not install it.  
+
+------------
+Sample programs
+------------
+
+Two simple test programs are provided in the /sample directory as 
+examples of using the P3DFFT library. These program can be run as a 
+correctness test, and also can be used for timing the library. 
+
+------------
+Using the P3DFFT Library
+------------
+
+1. p3dfft module
+
+p3dfft module declares important variables. It should be included 
+in any code that calls P3DFFT routines (via 'use p3dfft' statement). 
+
+The p3dfft module also specifies 'mytype', which is the type of real or 
+complex numbers used for the single of double precision. 
+
+2. Initialization
+
+Before using the library it is necessary to call an initialization routine
+'p3dfft_setup'. It accepts 4 arguments: p3dfft_setup(proc_dims,nx,ny,nz).
+The first argument is an array containing two elements, specifying how 
+the processor grid should be decomposed. Either 1D or 2D decomposition 
+can be specified. For example, when running on 12 processors, (4,3) or (2,6) 
+can be specified as proc_dims to indicate a 2D decomposition, or (1,12) 
+can be specified for 1D decomposition. proc_dims values are used to 
+initialize iproc and jproc. 
+Last three arguments are dimensions of the global 3D cubic volume to be 
+transformed. 
+
+The p3dfft_setup routine sets up the 2D grid of MPI sub-communicators in rows 
+and columns, and initializes variables specifying array dimensions for each 
+processor. These variables can be obtained by calling get_dims.
+For example: get_dims(istart,iend,isize,1) where  istart,iend and isize 
+are arrays of size 3, one value each for X,Y and Z, containing 
+beginning, end and size of the corresponding dimensions of local 
+partition of the grid for the calling processor. The last argument 
+is 1 for initial "physical-space" array of real numbers (local in X, 
+distributed P1 x P2 in Y and Z), 2 is for the output "wavenumber space" array 
+of complex variables (local in Z, distributed P1 x P2 in X and Y).
+Using these dimensions it is then possible to allocate appropriate space 
+for arrays. For examples,  see /sample subdirectory.  
+
+3. Forward 3D Fourier transform (real-to-complex)
+
+... is implemented throught the p3dfft_ftran subroutine using the following format: 
+
+p3dfft_ftran_r2c(IN,OUT)
+
+IN is a 3D array of real numbers, corresponding to the local subarray of the 
+global array NX x NY x NZ subdivided among iproc x jproc processors. 
+It is shaped with x dimension equal to nx
+(i.e. it is contained entirely within the processor), y dimension
+equal to jisize (i.e. distributed among dims(1) processors within 
+each row of the 2D processor grid) and z dimension equal to kjsize
+(i.e. distributed among dims(2) processors within each columns of 
+the processor grid).
+
+OUT is a 3D array of complex numbers, containing the local output of the 
+forward 3D FFT operation. It is shaped (iisize,jjsize,nz),
+that is X and Y dimensions are distributed among dims(1) and dims(2) 
+respectively, and Z dimension contained entirely. See below for more
+explanation about the storage of this array. 
+
+Note that both input and output are parts of the global 3D array 
+distributed among processors in a different way from each other, but 
+both of them have elements ordered (x,y,z) in memory. All arrays are 
+understood to have the "Fortran" ordering, that is the first dimension 
+loops the fastest. As explained below, the complex Out array 
+occupies a little more space than the input array. 
+
+In and Out arrays can occupy the same space in memory. In this case, 
+it is necessary to make sure that they start in the same location, 
+otherwise the results are unpredictable. 
+
+The forward 3D transform in P3DFFT proceeds as follows: first do a
+1D FFT in X dimension. Do all-to-all exchange among processors 
+in the same row, to reorganize data so that Y dimension is contained 
+entirely on each processor. Do a 1D FFT in Y dimension, then an 
+all-to-all exchange among processors in columns to reorganize for 
+Z dimension, and finally to the 1D FFT in Z. 
+
+4. Backward (inverse) transform
+
+... is implemented through the p3dfft_btran subroutine using the following format: 
+
+p3dfft_btran_c2r(In,Out)
+
+The arguments In(iisize,jjsize,nz) and Out(nx,jisize,kjsize) are 
+3D complex and real arrays, respectively, similar to the p3dfft_ftran 
+arguments Out and In. flg_inplace is also the logical argument 
+specifying whether the transform is in place or not. 
+
+The backward 3D transform in P3DFFT proceeds as follows: first do a
+1D complex FFT in Z dimension, then all-to-all exchange among 
+processors in columns, followed by 1D FFT in Y, all-to-all exchange
+in rows, and finally a complex-to-real transform in X. 
+As explained above, The input and output arrays occupy roughly 
+((sometimes excatly) the same amount of memory space). 
+
+5. Storage definitions for complex arrays 
+
+A few words about the X dimension transform. In the forward FFT, this is 
+technically a real-to-complex transform. Since Fourier transform of a real 
+function has the property of conjugate symmetry, only half of the 
+complex Fourier coefficients need to be kept.
+To be precise, if the input array has n real elements, Fourier coefficients
+F(k) for k=n/2+1,..,n can be dropped as they can be easily restored 
+from the first half. This saves both memory and time. 
+In this version we do not attempt to further pack the complex data. 
+Therefore the output array contains (NX/2+1) * NY * NZ complex numbers. 
+The same is true for the input array in the backward transform. 
+  
+------------
+Memory requirements
+------------
+
+Besides the input and output arrays (which can occupy the same 
+space, as mentioned above) the library allocates temporary buffer 
+roughly equal in size to the input or output array. This buffer 
+is necessary for all-to-all inter-processor exchanges.
+
+------------
+Performance considerations
+------------
+
+Optimal performance on many parallel platforms on a given number of 
+processors and problem size depends also on the choice of 
+processor decomposition. For example, given a processor grid 
+P1 x P2 (specified in the first argument to p3dfft_setup) performance 
+will generally be better with smaller P1 (with the product P1 x P2 kept 
+constant). It is therefore generally recommended to set P1 = P/N, where
+P is total processor count and N is the minimum of Ny and Nz.
+Ideally P1 will be equal or less to the number of cores on an SMP 
+or multi-core module. 
+
+------------
+Uneven cases
+------------
+
+Even distribution is recommended (processor grid dimension divides
+the grid dimensions evenle) for best performance but is not required. 
+
+------------
+Expanding the choice of 1D FFT libraries
+------------
+
+Other libraries besides ESSL or FFTW can be used as basis for building 
+P3DFFT. It is in the plans of the main author to add some more 
+library interfaces, but at present the users need to build such interfaces
+themselves by modifying some source files. Basically, 
+look for #ifdef ESSL or #ifdef FFTW flags everywhere in source
+files, and provide an additional portion of code starting with 
+an #ifdef for your library, providing similar functionality. 
+For example, in fft_init.F provide a set of functions that 
+initialize 1D FFT oprations. Look on the ESSL and FFTW portions 
+as examples of needs to be implemented. Be sure to provide both 
+double and single precision versions. You might also need to 
+introduce some variables such as work arrays etc, in fft_spec
+module, and initialize anything you need prior to beginning of work in 
+init_work routine. If you have questions please 
+contact the author, dmitry@sdsc.edu. 
+
+------------
+Feedback
+------------
+
+Please send your feedback, including bugs and suggestions, to 
+Dmitry Pekurovsky, dmitry@sdsc.edu
+
+
+

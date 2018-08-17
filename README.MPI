@@ -1,0 +1,24 @@
+MPI-enabled Defrost (single-field version)
+Hal Finkel <hal.finkel@yale.edu> 2008-2010
+
+The makefile assumes that mpif90 is in your path. Also, it attempts to autodetect
+whether the underlying compiler is gfortran or ifort, etc. but if that does not work,
+you can run:
+make USE_GNU=1
+to force the use of gfortran flags. Otherwise, ifort flags are used.
+
+Also, the name of the compiler can be overridden by setting the MPIFC variable, for example:
+make MPIFC=mympif90 
+
+Compared to the stock version, the run parameters and model-specific expressions have been
+refactored into parameters.inc and model.inc respectively.
+
+The current makefile is setup for the oscillon runs. It will generate executables for the
+combinations of parameters specified in the makefile. See the L_VALUES = , N_VALUES =, etc.
+lines in the makefile. Running the executables with MPI support is system specific, but something like:
+time mpirun ./defrost_400_1024_2.8125E-6_10.0_2 | tee stdout.log
+will probably work.
+
+Note: This version has been restricted to a single field. Restoring two-field support
+should be straightforward, but will require some code changed.
+
